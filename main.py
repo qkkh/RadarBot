@@ -2,6 +2,7 @@ import asyncio
 import sys
 import time
 import re
+import os
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -23,7 +24,8 @@ def keep_alive():
 
 # --- الإعدادات ---
 class RadarConfig:
-    TOKEN = 'MTQ5NDQxNzg4Mzk1Mjk3NTg5Mw.GePTcH.PP9_1ycfkAy_5KQuLZ36E8nj5MTbmwmiaPHC9k'
+    # تم تعديل التوكن هنا ليقرأ من إعدادات السيرفر المخفية (Environment Variables)
+    TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
     FOOTER = "نظام RADARZ الذكي v9.2 | مركز القيادة"
 
@@ -124,7 +126,12 @@ async def panel(interaction: discord.Interaction):
         await interaction.response.send_message("صلاحياتك لا تسمح بالدخول ❌", ephemeral=True)
 
 if __name__ == '__main__':
-    keep_alive() # تشغيل سيرفر الويب للبقاء حياً
+    keep_alive()
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    bot.run(RadarConfig.TOKEN)
+    
+    # التحقق من وجود التوكن قبل التشغيل
+    if RadarConfig.TOKEN:
+        bot.run(RadarConfig.TOKEN)
+    else:
+        print("❌ خطأ: التوكن غير موجود! تأكد من إضافته في Environment Variables باسم DISCORD_TOKEN")
