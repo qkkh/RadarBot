@@ -7,14 +7,18 @@ from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta
 
-# --- نظام البقاء حياً ---
+# --- نظام الاستضافة (Flask) للبقاء حياً على Render ---
 app = Flask('')
 @app.route('/')
 def home(): return "RADARZ Online"
 
-def run(): app.run(host='0.0.0.0', port=8080)
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
 def keep_alive():
-    Thread(target=run).start()
+    t = Thread(target=run)
+    t.daemon = True
+    t.start()
 
 # --- الإعدادات العامة ---
 class RadarConfig:
@@ -22,50 +26,50 @@ class RadarConfig:
     MAIN_COLOR = discord.Color.red()
     AUTHORIZED_USERS = [1341796578742243338, 551817782996762624, 366132848228564992, 1376970309797941372, 1342856146662461574]
 
-# --- نظام الأزرار التفاعلية للإعلان ---
+# --- نظام الأزرار التفاعلية ---
 class StreamButtons(discord.ui.View):
     def __init__(self, stream_link):
         super().__init__(timeout=None)
         self.stream_link = stream_link
         self.going = set()
         self.not_going = set()
+        # إضافة زر الرابط بشكل صحيح كمكون مستقل
+        self.add_item(discord.ui.Button(label="دخول البث المباشر 🚌", url=self.stream_link))
 
     def update_embed(self, embed):
+        # تحديث عداد الحضور والغياب
         embed.set_field_at(2, name="📡 المكتشفين على الرادار", 
                           value=f"✅ {len(self.going)} حاضر | ❌ {len(self.not_going)} غائب", inline=False)
         return embed
 
-    @discord.ui.button(label="سأحضر ✅", style=discord.ButtonStyle.success, custom_id="go")
+    @discord.ui.button(label="سأحضر ✅", style=discord.ButtonStyle.success, custom_id="go_btn")
     async def go_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.going.add(interaction.user.id)
         self.not_going.discard(interaction.user.id)
-        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]), view=self)
+        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]))
         await interaction.response.send_message(f"تم تسجيل حضورك! رابط البث: {self.stream_link}", ephemeral=True)
 
-    @discord.ui.button(label="لن أحضر ❌", style=discord.ButtonStyle.danger, custom_id="no_go")
+    @discord.ui.button(label="لن أحضر ❌", style=discord.ButtonStyle.danger, custom_id="no_btn")
     async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.not_going.add(interaction.user.id)
         self.going.discard(interaction.user.id)
-        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]), view=self)
-        await interaction.response.send_message("تم تسجيل غيابك، نراك في المرة القادمة!", ephemeral=True)
-
-    @discord.ui.button(label="دخول البث المباشر 🚌", style=discord.ButtonStyle.link)
-    def link_button(self):
-        # تم ضبط الرابط تلقائياً عند إنشاء الإعلان
-        pass
+        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]))
+        await interaction.response.send_message("تم تسجيل غيابك، نراك لاحقاً!", ephemeral=True)
 
 # --- واجهة إدخال بيانات البث ---
 class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الاحترافية 📡'):
     title_in = discord.ui.TextInput(label="عنوان البث", required=True)
-    time_in = discord.ui.TextInput(label="بعد كم دقيقة؟ (أرقام)", required=True)
+    time_in = discord.ui.TextInput(label="بعد كم دقيقة؟ (أرقام فقط)", required=True)
     link_in = discord.ui.TextInput(label="رابط اليوتيوب", required=True)
-    ment_in = discord.ui.TextInput(label="التنبيه", default="everyone")
+    ment_in = discord.ui.TextInput(label="نوع التنبيه", default="everyone")
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
+            # نظام الوقت الحي
             unix_ts = int((datetime.now() + timedelta(minutes=int(self.time_in.value))).timestamp())
-        except: return await interaction.followup.send("⚠️ أرقام فقط في التوقيت!")
+        except: 
+            return await interaction.followup.send("⚠️ التوقيت يجب أن يكون أرقاماً!", ephemeral=True)
 
         video_id = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", self.link_in.value)
         thumb = f"https://img.youtube.com/vi/{video_id.group(1)}/maxresdefault.jpg" if video_id else ""
@@ -78,12 +82,10 @@ class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الا
         embed.set_footer(text="نظام RADARZ الذكي v9.2")
 
         view = StreamButtons(self.link_in.value)
-        # إضافة زر الرابط يدوياً ليكون شغال 100%
-        view.add_item(discord.ui.Button(label="دخول البث المباشر 🚌", url=self.link_in.value))
         
         content = f"@{self.ment_in.value} !إرصدنا إشارة بث جديدة" if self.ment_in.value != "none" else ""
         await interaction.channel.send(content=content, embed=embed, view=view)
-        await interaction.followup.send("✅ تم الإطلاق بنجاح الأزرار الآن تعمل!", ephemeral=True)
+        await interaction.followup.send("✅ تم إطلاق الإشارة بنجاح!", ephemeral=True)
 
 # --- لوحة التحكم ---
 class AdminDashboard(discord.ui.View):
@@ -95,7 +97,7 @@ class RadarBot(commands.Bot):
     def __init__(self): super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def on_ready(self):
         await self.tree.sync()
-        print(f"📡 {self.user} Online")
+        print(f"📡 {self.user} Online on Render")
 
 bot = RadarBot()
 
@@ -103,6 +105,8 @@ bot = RadarBot()
 async def panel(interaction: discord.Interaction):
     if interaction.user.id in RadarConfig.AUTHORIZED_USERS:
         await interaction.response.send_message("🎮 مركز العمليات", view=AdminDashboard(), ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ لا تملك صلاحية!", ephemeral=True)
 
 if __name__ == '__main__':
     keep_alive()
