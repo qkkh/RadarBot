@@ -22,6 +22,9 @@ def keep_alive():
 class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
+    # معرفات الرومات المطلوبة
+    STREAM_CHANNEL_ID = 1200740059817721856  # روم البث
+    YOUTUBE_CHANNEL_ID = 924316521050820609 # روم اليوتيوب
     STATS_CATEGORY_ID = 1494627032112304179 
     AUTHORIZED_USERS = [1341796578742243338, 551817782996762624, 366132848228564992, 1376970309797941372, 1342856146662461574]
 
@@ -62,15 +65,21 @@ class StreamButtons(discord.ui.View):
         await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]))
         await interaction.response.send_message("تم تسجيل غيابك، نراك لاحقاً!", ephemeral=True)
 
-# --- واجهة فيديو اليوتيوب الجديد (تم تعديل اسم صاحب القناة) ---
+# --- واجهة فيديو اليوتيوب الجديد ---
 class YoutubeModal(discord.ui.Modal, title='نشر فيديو يوتيوب جديد 🎬'):
     link = discord.ui.TextInput(label="رابط الفيديو", placeholder="https://www.youtube.com/watch?v=...", required=True)
     ment = discord.ui.TextInput(label="المنشن", default="everyone")
     async def on_submit(self, interaction: discord.Interaction):
-        # الرسالة المعدلة باسم القناة "رادارز - Radarz"
+        await interaction.response.defer(ephemeral=True)
+        # تحديد القناة المطلوبة لليوتيوب
+        channel = interaction.guild.get_channel(RadarConfig.YOUTUBE_CHANNEL_ID)
         content = f"📣 @{self.ment.value} **رادارز - Radarz** نزل فيديو جديد ورهيب على اليوتيوب! لا يفوتكم المشاهدة 🔥\n\n{self.link.value}"
-        await interaction.channel.send(content=content)
-        await interaction.response.send_message("✅ تم نشر الفيديو بنجاح!", ephemeral=True)
+        
+        if channel:
+            await channel.send(content=content)
+            await interaction.followup.send("✅ تم نشر الفيديو في الروم المخصص!", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ فشل العثور على روم اليوتيوب، تأكد من الـ ID.", ephemeral=True)
 
 # --- واجهات اللوحة الأخرى ---
 class SayModal(discord.ui.Modal, title='إرسال رسالة 📝'):
@@ -90,15 +99,24 @@ class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الا
         await interaction.response.defer(ephemeral=True)
         try: ts = int((datetime.now() + timedelta(minutes=int(self.time_in.value))).timestamp())
         except: return await interaction.followup.send("⚠️ أرقام فقط!", ephemeral=True)
+        
         v_id = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", self.link_in.value)
         thumb = f"https://img.youtube.com/vi/{v_id.group(1)}/maxresdefault.jpg" if v_id else ""
+        
         embed = discord.Embed(title=f"🚨 إشارة بث نشطة: {self.title_in.value}", color=discord.Color.red())
         embed.add_field(name="⏳ الانطلاق:", value=f"<t:{ts}:R>", inline=True)
         embed.add_field(name="🗓️ الموعد:", value=f"<t:{ts}:F>", inline=False)
         embed.add_field(name="📡 المكتشفين على الرادار", value="✅ 0 حاضر | ❌ 0 غائب", inline=False)
         if thumb: embed.set_image(url=thumb)
-        await interaction.channel.send(content=f"@{self.ment_in.value} !إرصدنا إشارة بث جديدة", embed=embed, view=StreamButtons(self.link_in.value))
-        await interaction.followup.send("✅ تم الإطلاق", ephemeral=True)
+        
+        # تحديد القناة المطلوبة للبث
+        channel = interaction.guild.get_channel(RadarConfig.STREAM_CHANNEL_ID)
+        
+        if channel:
+            await channel.send(content=f"@{self.ment_in.value} !إرصدنا إشارة بث جديدة", embed=embed, view=StreamButtons(self.link_in.value))
+            await interaction.followup.send("✅ تم إطلاق البث في الروم المخصص!", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ فشل العثور على روم البث، تأكد من الـ ID.", ephemeral=True)
 
 # --- لوحة التحكم الشاملة ---
 class AdminDashboard(discord.ui.View):
