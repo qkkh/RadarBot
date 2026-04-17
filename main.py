@@ -62,7 +62,6 @@ class StatusUpdateModal(discord.ui.Modal, title='تحديث حالة البوت'
     new_status = discord.ui.TextInput(
         label="نشاط البوت", 
         placeholder="أدخل الحالة الجديدة هنا..",
-        help_text="سيتم عرض هذا النص تحت اسم البوت كنشاط (Watching).",
         required=True
     )
     async def on_submit(self, interaction: discord.Interaction):
@@ -74,8 +73,7 @@ class SayModal(discord.ui.Modal, title='إرسال رسالة'):
     ment = discord.ui.TextInput(
         label="نوع المنشن", 
         placeholder="everyone / here / none", 
-        default="none",
-        help_text="اختر 'everyone' لمنشن الكل، 'here' لمنشن المتواجدين، أو 'none' بدون منشن."
+        default="none"
     )
     async def on_submit(self, interaction: discord.Interaction):
         content = ""
