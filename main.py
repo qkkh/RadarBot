@@ -9,7 +9,7 @@ from discord import app_commands
 from flask import Flask
 from threading import Thread
 
-# --- نظام البقاء حياً (Stay Alive) ---
+# --- نظام البقاء حياً ---
 app = Flask('')
 @app.route('/')
 def home(): return "RADARZ System is Alive"
@@ -23,8 +23,8 @@ def keep_alive():
 class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
-    FOOTER = "نظام RADARZ الذكي v9.5 | مركز القيادة"
-    # الأيدي الخاص بالكاتقوري اللي أرسلته
+    FOOTER = "نظام RADARZ الذكي v9.6 | مركز القيادة"
+    # الأيدي الخاص بالكاتقوري للإحصائيات
     STATS_CATEGORY_ID = 1494627032112304179 
 
 def get_yt_thumb(url):
@@ -58,8 +58,16 @@ class StreamView(discord.ui.View):
         embed.set_field_at(0, name="الرادار 📡", value=f"✅ **{self.going}** حاضر | ❌ **{self.not_going}** غائب")
         await interaction.response.edit_message(embed=embed)
 
+# نافذة تعديل الحالة
+class StatusUpdateModal(discord.ui.Modal, title='تحديث حالة البوت'):
+    new_status = discord.ui.TextInput(label="نشاط البوت الحالي", placeholder="مثال: في بث مباشر الآن 🔴", required=True, max_length=100)
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=self.new_status.value))
+        await interaction.response.send_message(f"✅ تم تحديث الحالة إلى **{self.new_status.value}**", ephemeral=True)
+
+# نافذة إرسال الرسالة
 class SayModal(discord.ui.Modal, title='إرسال رسالة مخصصة'):
-    msg = discord.ui.TextInput(label="محتوى الرسالة", style=discord.TextStyle.paragraph, required=True, placeholder="اكتب كلامك هنا..")
+    msg = discord.ui.TextInput(label="محتوى الرسالة", style=discord.TextStyle.paragraph, required=True, placeholder="اكتب رسالتك هنا..")
     ment = discord.ui.TextInput(label="المنشن (everyone / here / none)", default="none")
     async def on_submit(self, interaction: discord.Interaction):
         content = ""
@@ -69,9 +77,10 @@ class SayModal(discord.ui.Modal, title='إرسال رسالة مخصصة'):
         await interaction.channel.send(content=f"{content}\n**{self.msg.value}**")
         await interaction.response.send_message("✅ تم الإرسال!", ephemeral=True)
 
+# نافذة إطلاق البث
 class BroadcastModal(discord.ui.Modal, title='تجهيز إشارة البث'):
     title_in = discord.ui.TextInput(label="عنوان البث")
-    mins_in = discord.ui.TextInput(label="بعد كم دقيقة؟", placeholder="مثال: 10")
+    mins_in = discord.ui.TextInput(label="بعد كم دقيقة؟")
     url_in = discord.ui.TextInput(label="رابط اليوتيوب")
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -85,14 +94,20 @@ class BroadcastModal(discord.ui.Modal, title='تجهيز إشارة البث'):
             await interaction.response.send_message(embed=embed, view=StreamView(self.url_in.value))
         except: await interaction.response.send_message("خطأ في البيانات!", ephemeral=True)
 
+# لوحة التحكم الشاملة
 class AdminDashboard(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
+
     @discord.ui.button(label="إطلاق بث 🔴", style=discord.ButtonStyle.danger, emoji="🚀")
     async def b_btn(self, i, b): await i.response.send_modal(BroadcastModal())
+
     @discord.ui.button(label="إرسال رسالة 📝", style=discord.ButtonStyle.success, emoji="💬")
     async def s_btn(self, i, b): await i.response.send_modal(SayModal())
+
+    @discord.ui.button(label="تعديل الحالة 🛠️", style=discord.ButtonStyle.secondary, emoji="✍️")
+    async def status_btn(self, i, b): await i.response.send_modal(StatusUpdateModal())
 
 # --- البوت الرئيسي ---
 class RadarBot(commands.Bot):
@@ -102,25 +117,19 @@ class RadarBot(commands.Bot):
     async def on_ready(self):
         await self.tree.sync()
         if not self.update_stats.is_running(): self.update_stats.start()
-        print(f"📡 {self.user.name} Is Ready!")
+        print(f"📡 {self.user.name} Is Online!")
 
     @tasks.loop(minutes=10)
     async def update_stats(self):
         for guild in self.guilds:
             category = guild.get_channel(RadarConfig.STATS_CATEGORY_ID)
             if not category: continue
-
-            # مسح الرومات القديمة لضمان عدم التكرار
             for vc in category.voice_channels:
                 try: await vc.delete()
                 except: pass
-            
-            # جلب الأرقام
             total = guild.member_count
             online = len([m for m in guild.members if m.status != discord.Status.offline])
             bots = len([m for m in guild.members if m.bot])
-
-            # إنشاء الرومات الجديدة
             stats = [f"👥 الأعضاء: {total}", f"🟢 المتواجدون: {online}", f"🤖 البوتات: {bots}"]
             for s in stats:
                 await guild.create_voice_channel(s, category=category, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
@@ -130,10 +139,14 @@ bot = RadarBot()
 @bot.tree.command(name="panel", description="لوحة تحكم رادرز")
 async def panel(interaction: discord.Interaction):
     if interaction.user.guild_permissions.manage_messages:
-        embed = discord.Embed(title="🎮 مركز عمليات RADARZ", description="إختر العملية المطلوبة من الأزرار أدناه.", color=RadarConfig.MAIN_COLOR)
+        embed = discord.Embed(
+            title="🎮 مركز عمليات RADARZ", 
+            description="اختر العملية المطلوبة من الأزرار أدناه.", 
+            color=RadarConfig.MAIN_COLOR
+        )
         await interaction.response.send_message(embed=embed, view=AdminDashboard(bot), ephemeral=True)
     else:
-        await interaction.response.send_message("صلاحياتك لا تكفي!", ephemeral=True)
+        await interaction.response.send_message("صلاحياتك لا تكفي! ❌", ephemeral=True)
 
 if __name__ == '__main__':
     keep_alive()
