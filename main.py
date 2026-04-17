@@ -23,14 +23,14 @@ class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
     STATS_CATEGORY_ID = 1494627032112304179 
-
-def get_yt_thumb(url):
-    video_id = None
-    patterns = [r"v=([a-zA-Z0-9_-]{11})", r"be/([a-zA-Z0-9_-]{11})", r"shorts/([a-zA-Z0-9_-]{11})", r"live/([a-zA-Z0-9_-]{11})"]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match: video_id = match.group(1); break
-    return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg" if video_id else None
+    # قائمة المصرح لهم (IDs الإدارة والمالك)
+    AUTHORIZED_USERS = [
+        1341796578742243338,
+        551817782996762624,
+        366132848228564992,
+        1376970309797941372,
+        1342856146662461574
+    ]
 
 # --- نظام التحديث ---
 async def refresh_radar_stats(guild):
@@ -47,7 +47,7 @@ async def refresh_radar_stats(guild):
         await guild.create_voice_channel(s, category=category, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
     return True
 
-# --- واجهات التفاعل ---
+# --- واجهات التفاعل (Modals) ---
 
 class EmergencyModal(discord.ui.Modal, title='إرسال بلاغ عاجل ⚠️'):
     subject = discord.ui.TextInput(label="عنوان البلاغ", placeholder="تحديث هام..", required=True)
@@ -75,18 +75,19 @@ class SayModal(discord.ui.Modal, title='إرسال رسالة'):
         await interaction.channel.send(content=f"{content}\n**{self.msg.value}**")
         await interaction.response.send_message("✅ تم الإرسال", ephemeral=True)
 
+# --- لوحة التحكم ---
 class AdminDashboard(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
-    @discord.ui.button(label="إطلاق بث 🔴", style=discord.ButtonStyle.danger, emoji="🚀")
-    async def b(self, i, b): await i.response.send_modal(SayModal()) # تم اختصاره للتبسيط
+    @discord.ui.button(label="إرسال رسالة 📝", style=discord.ButtonStyle.success, emoji="💬")
+    async def s(self, i, b): await i.response.send_modal(SayModal())
     @discord.ui.button(label="بلاغ عاجل ⚠️", style=discord.ButtonStyle.primary, emoji="📢")
     async def e(self, i, b): await i.response.send_modal(EmergencyModal())
     @discord.ui.button(label="تحديث الإحصائيات 🔄", style=discord.ButtonStyle.secondary, emoji="♻️")
     async def r(self, i, b):
         await i.response.defer(ephemeral=True)
-        if await refresh_radar_stats(i.guild): await i.followup.send("✅ تم التحديث", ephemeral=True)
+        if await refresh_radar_stats(i.guild): await i.followup.send("✅ تم تحديث الرادار", ephemeral=True)
     @discord.ui.button(label="تعديل الحالة 🛠️", style=discord.ButtonStyle.secondary, emoji="✍️")
     async def st(self, i, b): await i.response.send_modal(StatusUpdateModal())
 
@@ -104,14 +105,14 @@ class RadarBot(commands.Bot):
 
 bot = RadarBot()
 
-@bot.tree.command(name="panel", description="لوحة التحكم للمالك والإدارة")
+@bot.tree.command(name="panel", description="لوحة التحكم للإدارة المصرح لها")
 async def panel(interaction: discord.Interaction):
-    # الشرط الجديد: المالك أو أي شخص لديه صلاحية Administrator
-    if interaction.user.id == interaction.guild.owner_id or interaction.user.guild_permissions.administrator:
-        embed = discord.Embed(title="🎮 مركز عمليات RADARZ", description="تحكم كامل بالسيرفر (المالك + الإدارة)", color=RadarConfig.MAIN_COLOR)
+    # التحقق عبر الأيدي أو صلاحية الإدارة
+    if interaction.user.id in RadarConfig.AUTHORIZED_USERS or interaction.user.guild_permissions.administrator:
+        embed = discord.Embed(title="🎮 مركز عمليات RADARZ", description="تم رصد هويتك.. الوصول متاح للمسؤولين فقط.", color=RadarConfig.MAIN_COLOR)
         await interaction.response.send_message(embed=embed, view=AdminDashboard(bot), ephemeral=True)
     else:
-        await interaction.response.send_message("❌ هذا الأمر مخصص للمالك والإدارة فقط!", ephemeral=True)
+        await interaction.response.send_message("❌ عذراً، هويتك غير مدرجة في سجلات الوصول!", ephemeral=True)
 
 if __name__ == '__main__':
     keep_alive()
