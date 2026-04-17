@@ -43,12 +43,14 @@ async def refresh_radar_stats(guild):
 
 class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الاحترافية 📡'):
     title_input = discord.ui.TextInput(label="عنوان البث", placeholder="عنوان يشد المتابعين...", required=True)
-    time_input = discord.ui.TextInput(label="التوقيت (دقائق)", placeholder="متى تبدأ؟", required=True)
+    time_input = discord.ui.TextInput(label="التوقيت", placeholder="مثلاً: 1 دقيقة / 10 دقائق", required=True)
     link_input = discord.ui.TextInput(label="رابط اليوتيوب", placeholder="ضع الرابط هنا...", required=True)
     mention_input = discord.ui.TextInput(label="نوع التنبيه", default="everyone", placeholder="everyone / here / none", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        
+        # استخراج ثمنيل اليوتيوب
         video_id = None
         regex = r"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^\"&?\/\s]{11})"
         match = re.search(regex, self.link_input.value)
@@ -58,8 +60,14 @@ class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الا
         else:
             thumbnail_url = "https://r2.community.sony.com/t5/image/serverpage/image-id/703649i6E2E195F919E3A9F/image-size/large?v=v2&px=999"
 
-        embed = discord.Embed(title=f"🚨 إشارة بث نشطة: {self.title_input.value}", description="**نظام رادرز للإرسال الرقمي**", color=discord.Color.red(), timestamp=datetime.now())
-        embed.add_field(name="⏳ الانطلاق:", value=f"بعد {self.time_input.value} دقيقة", inline=True)
+        # بناء الـ Embed بتنسيق الوقت المطلوب
+        embed = discord.Embed(
+            title=f"🚨 إشارة بث نشطة: {self.title_input.value}",
+            description="**نظام رادرز للإرسال الرقمي**",
+            color=discord.Color.red(),
+            timestamp=datetime.now()
+        )
+        embed.add_field(name="⏳ الانطلاق:", value=f"بعد {self.time_input.value}", inline=True)
         embed.add_field(name="🗓️ الموعد:", value=datetime.now().strftime("%A, %B %d, %Y"), inline=False)
         embed.add_field(name="📡 المكتشفين على الرادار", value="✅ 0 حاضر | ❌ 0 غائب", inline=False)
         embed.set_image(url=thumbnail_url)
@@ -72,33 +80,31 @@ class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الا
 
         content = f"@{self.mention_input.value} !إرصدنا إشارة بث جديدة" if self.mention_input.value != "none" else "!إرصدنا إشارة بث جديدة"
         await interaction.channel.send(content=content, embed=embed, view=view)
-        await interaction.followup.send("✅ تم إطلاق إشارة البث بنجاح", ephemeral=True)
+        await interaction.followup.send("✅ تم إرسال إشارة البث بنجاح", ephemeral=True)
 
 class SayModal(discord.ui.Modal, title='إرسال رسالة 📝'):
-    msg = discord.ui.TextInput(label="المحتوى", style=discord.TextStyle.paragraph, placeholder="اكتب رسالتك هنا...", required=True)
+    msg = discord.ui.TextInput(label="المحتوى", style=discord.TextStyle.paragraph, required=True)
     ment = discord.ui.TextInput(label="نوع المنشن", placeholder="everyone / here / none", default="none")
     async def on_submit(self, interaction: discord.Interaction):
         content = ""
         if "everyone" in self.ment.value.lower(): content = "@everyone"
         elif "here" in self.ment.value.lower(): content = "@here"
         await interaction.channel.send(content=f"{content}\n**{self.msg.value}**")
-        await interaction.response.send_message("✅ تم إرسال الرسالة بنجاح", ephemeral=True)
+        await interaction.response.send_message("✅ تم الإرسال", ephemeral=True)
 
 class EmergencyModal(discord.ui.Modal, title='إرسال بلاغ عاجل ⚠️'):
-    subject = discord.ui.TextInput(label="عنوان البلاغ", placeholder="تحديث هام..", required=True)
-    details = discord.ui.TextInput(label="تفاصيل البلاغ", style=discord.TextStyle.paragraph, required=True)
+    subject = discord.ui.TextInput(label="عنوان البلاغ", required=True)
+    details = discord.ui.TextInput(label="التفاصيل", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(title=f"🚨 بلاغ عاجل: {self.subject.value}", description=f"\n**{self.details.value}**\n\n@everyone", color=discord.Color.red())
-        msg = await interaction.channel.send(content="@everyone", embed=embed)
-        try: await msg.pin()
-        except: pass
-        await interaction.response.send_message("✅ تم النشر والتثبيت", ephemeral=True)
+        embed = discord.Embed(title=f"🚨 بلاغ عاجل: {self.subject.value}", description=f"**{self.details.value}**", color=discord.Color.red())
+        await interaction.channel.send(content="@everyone", embed=embed)
+        await interaction.response.send_message("✅ تم النشر", ephemeral=True)
 
 class StatusUpdateModal(discord.ui.Modal, title='تعديل حالة البوت'):
-    new_status = discord.ui.TextInput(label="نشاط البوت", placeholder="أدخل الحالة الجديدة هنا..", required=True)
+    new_status = discord.ui.TextInput(label="نشاط البوت", required=True)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=self.new_status.value))
-        await interaction.response.send_message("✅ تم تحديث حالة البوت بنجاح", ephemeral=True)
+        await interaction.response.send_message("✅ تم التحديث", ephemeral=True)
 
 # --- لوحة التحكم ---
 class AdminDashboard(discord.ui.View):
