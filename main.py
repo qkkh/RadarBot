@@ -2,144 +2,109 @@ import asyncio
 import os
 import re
 import discord
-from discord.ext import commands
+import requests
+from discord.ext import commands, tasks
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta
 
-# --- نظام الاستضافة للبقاء حياً على Render ---
+# --- نظام الاستضافة (Flask) ---
 app = Flask('')
 @app.route('/')
-def home(): return "RADARZ Operations Online"
-
+def home(): return "RADARZ YouTube Tracking Active"
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
-    t = Thread(target=run)
-    t.daemon = True
-    t.start()
+    t = Thread(target=run); t.daemon = True; t.start()
 
 # --- الإعدادات العامة ---
 class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
-    STATS_CATEGORY_ID = 1494627032112304179 
-    AUTHORIZED_USERS = [1341796578742243338, 551817782996762624, 366132848228564992, 1376970309797941372, 1342856146662461574]
+    # القناة التي أرسلتها لنشر الفيديوهات
+    YT_POST_CHANNEL_ID = 924316521050820609
+    # ضع هنا الـ ID الخاص بقناتك على يوتيوب (الذي يبدأ بـ UC) للربط التلقائي
+    YOUTUBE_CHANNEL_ID = "UC_YOUR_CHANNEL_ID_HERE"
+    AUTHORIZED_USERS = [1341796578742243338, 551817782996762624, 1376970309797941372]
 
-# --- وظيفة تحديث الإحصائيات ---
-async def refresh_radar_stats(guild):
-    category = guild.get_channel(RadarConfig.STATS_CATEGORY_ID)
-    if not category: return False
-    for vc in category.voice_channels:
-        try: await vc.delete()
-        except: pass
-    total, online = guild.member_count, len([m for m in guild.members if m.status != discord.Status.offline])
-    stats = [f"👥 الأعضاء: {total}", f"🟢 المتواجدون: {online}", f"🤖 البوتات: {len([m for m in guild.members if m.bot])}"]
-    for s in stats:
-        await guild.create_voice_channel(s, category=category, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
-    return True
+# --- وظيفة ذكية لسحب اسم القناة من الرابط ---
+def fetch_channel_name(url):
+    try:
+        response = requests.get(url).text
+        # البحث عن اسم صاحب القناة في كود الصفحة
+        match = re.search(r'"author":"(.*?)"', response)
+        return match.group(1) if match else "YouTube Creator"
+    except:
+        return "YouTube Creator"
 
-# --- نظام أزرار البث المباشر ---
-class StreamButtons(discord.ui.View):
-    def __init__(self, stream_link):
-        super().__init__(timeout=None)
-        self.stream_link = stream_link
-        self.going, self.not_going = set(), set()
-        self.add_item(discord.ui.Button(label="دخول البث المباشر 🚌", url=self.stream_link))
+# --- نظام الربط التلقائي (المراقبة) ---
+last_video_id = None
+@tasks.loop(minutes=5)
+async def youtube_tracker():
+    global last_video_id
+    if RadarConfig.YOUTUBE_CHANNEL_ID == "UC_YOUR_CHANNEL_ID_HERE": return
+    try:
+        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={RadarConfig.YOUTUBE_CHANNEL_ID}"
+        feed = requests.get(rss_url).text
+        current_id = re.search(r'<yt:videoId>(.*?)</yt:videoId>', feed).group(1)
+        
+        if current_id != last_video_id:
+            if last_video_id is not None:
+                channel = bot.get_channel(RadarConfig.YT_POST_CHANNEL_ID)
+                author = re.search(r'<author><name>(.*?)</name>', feed).group(1)
+                # تنسيق الإعلان الاحترافي
+                await channel.send(f"Hey @everyone **{author}** uploaded a new youtube video!\nhttps://www.youtube.com/watch?v={current_id}")
+            last_video_id = current_id
+    except: pass
 
-    def update_embed(self, embed):
-        embed.set_field_at(2, name="📡 المكتشفين على الرادار", value=f"✅ {len(self.going)} حاضر | ❌ {len(self.not_going)} غائب", inline=False)
-        return embed
-
-    @discord.ui.button(label="سأحضر ✅", style=discord.ButtonStyle.success, custom_id="go_btn")
-    async def go_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.going.add(interaction.user.id); self.not_going.discard(interaction.user.id)
-        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]))
-        await interaction.response.send_message(f"تم تسجيل حضورك! الرابط: {self.stream_link}", ephemeral=True)
-
-    @discord.ui.button(label="لن أحضر ❌", style=discord.ButtonStyle.danger, custom_id="no_btn")
-    async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.not_going.add(interaction.user.id); self.going.discard(interaction.user.id)
-        await interaction.message.edit(embed=self.update_embed(interaction.message.embeds[0]))
-        await interaction.response.send_message("تم تسجيل غيابك، نراك لاحقاً!", ephemeral=True)
-
-# --- واجهة فيديو اليوتيوب الجديد (تم التعريب) ---
-class YoutubeModal(discord.ui.Modal, title='نشر فيديو يوتيوب جديد 🎬'):
-    link = discord.ui.TextInput(label="رابط الفيديو", placeholder="https://www.youtube.com/watch?v=...", required=True)
+# --- واجهة إدخال فيديو اليوتيوب (الزر اليدوي) ---
+class YoutubeManualModal(discord.ui.Modal, title='نشر فيديو يوتيوب 🎬'):
+    link = discord.ui.TextInput(label="رابط الفيديو", placeholder="انسخ الرابط هنا...", required=True)
     ment = discord.ui.TextInput(label="المنشن", default="everyone")
-    async def on_submit(self, interaction: discord.Interaction):
-        # الرسالة المعربة الجديدة
-        content = f"📣 @{self.ment.value} **رادارز Radarz** نزل فيديو جديد ورهيب على اليوتيوب! لا يفوتكم المشاهدة 🔥\n\n{self.link.value}"
-        await interaction.channel.send(content=content)
-        await interaction.response.send_message("✅ تم نشر الفيديو بالعربي بنجاح!", ephemeral=True)
 
-# --- واجهات اللوحة الأخرى ---
-class SayModal(discord.ui.Modal, title='إرسال رسالة 📝'):
-    msg = discord.ui.TextInput(label="المحتوى", style=discord.TextStyle.paragraph, required=True)
-    ment = discord.ui.TextInput(label="نوع المنشن", default="none")
-    async def on_submit(self, interaction: discord.Interaction):
-        c = f"@{self.ment.value}" if self.ment.value.lower() in ['everyone', 'here'] else ""
-        await interaction.channel.send(content=f"{c}\n**{self.msg.value}**")
-        await interaction.response.send_message("✅ تم الإرسال", ephemeral=True)
-
-class StreamModal(discord.ui.Modal, title='تجهيز إشارة البث الاحترافية 📡'):
-    title_in = discord.ui.TextInput(label="عنوان البث", required=True)
-    time_in = discord.ui.TextInput(label="بعد كم دقيقة؟", required=True)
-    link_in = discord.ui.TextInput(label="رابط اليوتيوب", required=True)
-    ment_in = discord.ui.TextInput(label="التنبيه", default="everyone")
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        try: ts = int((datetime.now() + timedelta(minutes=int(self.time_in.value))).timestamp())
-        except: return await interaction.followup.send("⚠️ أرقام فقط!", ephemeral=True)
-        v_id = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", self.link_in.value)
-        thumb = f"https://img.youtube.com/vi/{v_id.group(1)}/maxresdefault.jpg" if v_id else ""
-        embed = discord.Embed(title=f"🚨 إشارة بث نشطة: {self.title_in.value}", color=discord.Color.red())
-        embed.add_field(name="⏳ الانطلاق:", value=f"<t:{ts}:R>", inline=True)
-        embed.add_field(name="🗓️ الموعد:", value=f"<t:{ts}:F>", inline=False)
-        embed.add_field(name="📡 المكتشفين على الرادار", value="✅ 0 حاضر | ❌ 0 غائب", inline=False)
-        if thumb: embed.set_image(url=thumb)
-        await interaction.channel.send(content=f"@{self.ment_in.value} !إرصدنا إشارة بث جديدة", embed=embed, view=StreamButtons(self.link_in.value))
-        await interaction.followup.send("✅ تم الإطلاق", ephemeral=True)
+        # سحب اسم القناة الحقيقي بدلاً من اسم المستخدم
+        channel_display_name = fetch_channel_name(self.link.value)
+        
+        # إرسال الرسالة إلى القناة المحددة 924316521050820609
+        target_channel = interaction.guild.get_channel(RadarConfig.YT_POST_CHANNEL_ID)
+        content = f"Hey @{self.ment.value} **{channel_display_name}** uploaded a new youtube video!\n{self.link.value}"
+        
+        if target_channel:
+            await target_channel.send(content=content)
+            await interaction.followup.send(f"✅ تم النشر في قناة الفيديوهات باسم: {channel_display_name}", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ لم أجد القناة، تأكد من الصلاحيات.", ephemeral=True)
 
-# --- لوحة التحكم الشاملة ---
+# --- لوحة التحكم ---
 class AdminDashboard(discord.ui.View):
-    def __init__(self, bot): super().__init__(timeout=None); self.bot = bot
-    @discord.ui.button(label="إرسال رسالة 📝", style=discord.ButtonStyle.success, emoji="💬", row=0)
-    async def s(self, i, b): await i.response.send_modal(SayModal())
-    @discord.ui.button(label="إطلاق بث 🚀", style=discord.ButtonStyle.danger, emoji="🔴", row=0)
-    async def strm(self, i, b): await i.response.send_modal(StreamModal())
-    @discord.ui.button(label="فيديو اليوتيوب 🎬", style=discord.ButtonStyle.primary, emoji="🎥", row=1)
-    async def yt(self, i, b): await i.response.send_modal(YoutubeModal())
-    @discord.ui.button(label="تعديل الحالة 🛠️", style=discord.ButtonStyle.secondary, emoji="✍️", row=1)
-    async def st(self, i, b):
-        class StatM(discord.ui.Modal, title='تعديل الحالة'):
-            s = discord.ui.TextInput(label="النشاط")
-            async def on_submit(self, i): 
-                await i.client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=self.s.value))
-                await i.response.send_message("✅ تم", ephemeral=True)
-        await i.response.send_modal(StatM())
-    @discord.ui.button(label="بلاغ عاجل ⚠️", style=discord.ButtonStyle.primary, emoji="📢", row=2)
-    async def e(self, i, b):
-        class EmM(discord.ui.Modal, title='بلاغ عاجل'):
-            t = discord.ui.TextInput(label="العنوان"); d = discord.ui.TextInput(label="التفاصيل", style=discord.TextStyle.paragraph)
-            async def on_submit(self, i):
-                await i.channel.send(content="@everyone", embed=discord.Embed(title=f"🚨 {self.t.value}", description=self.d.value, color=discord.Color.red()))
-                await i.response.send_message("✅ تم", ephemeral=True)
-        await i.response.send_modal(EmM())
-    @discord.ui.button(label="تحديث الإحصائيات 🔄", style=discord.ButtonStyle.secondary, emoji="♻️", row=2)
-    async def refresh(self, i, b):
-        await i.response.defer(ephemeral=True)
-        if await refresh_radar_stats(i.guild): await i.followup.send("✅ تم التحديث", ephemeral=True)
-        else: await i.followup.send("❌ خطأ بالـ ID", ephemeral=True)
+    def __init__(self): super().__init__(timeout=None)
+    
+    @discord.ui.button(label="فيديو اليوتيوب 🎬", style=discord.ButtonStyle.primary, emoji="🎥")
+    async def youtube_btn(self, i, b):
+        await i.response.send_modal(YoutubeManualModal())
+
+    @discord.ui.button(label="إطلاق بث 🚀", style=discord.ButtonStyle.danger, emoji="🔴")
+    async def stream_btn(self, i, b):
+        # هنا تضع كود StreamModal السابق الذي صممناه
+        pass
 
 class RadarBot(commands.Bot):
-    def __init__(self): super().__init__(command_prefix="!", intents=discord.Intents.all())
-    async def on_ready(self): await self.tree.sync(); print(f"📡 {self.user} Online")
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=discord.Intents.all())
+    async def on_ready(self):
+        await self.tree.sync()
+        youtube_tracker.start() # تشغيل الربط التلقائي
+        print(f"📡 RADARZ Online - Target Channel: {RadarConfig.YT_POST_CHANNEL_ID}")
 
 bot = RadarBot()
-@bot.tree.command(name="panel", description="لوحة التحكم")
-async def panel(i: discord.Interaction):
-    if i.user.id in RadarConfig.AUTHORIZED_USERS:
-        emb = discord.Embed(title="🎮 مركز عمليات RADARZ", description="دليل الأوامر جاهز، اختر ما يناسبك.", color=RadarConfig.MAIN_COLOR)
-        await i.response.send_message(embed=emb, view=AdminDashboard(bot), ephemeral=True)
 
-if __name__ == '__main__': keep_alive(); bot.run(RadarConfig.TOKEN)
+@bot.tree.command(name="panel", description="فتح لوحة تحكم رادارز")
+async def panel(interaction: discord.Interaction):
+    if interaction.user.id in RadarConfig.AUTHORIZED_USERS:
+        embed = discord.Embed(title="🎮 مركز عمليات RADARZ", description="تحكم في النشر والإشعارات فوراً.", color=RadarConfig.MAIN_COLOR)
+        await interaction.response.send_message(embed=embed, view=AdminDashboard(), ephemeral=True)
+
+if __name__ == '__main__':
+    keep_alive()
+    bot.run(RadarConfig.TOKEN)
