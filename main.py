@@ -115,16 +115,26 @@ class RadarBotV9(commands.Bot):
 
 bot = RadarBotV9()
 
-# --- أمر Say الجديد ---
-@bot.tree.command(name="say", description="يجعل البوت يكرر كلامك في القناة")
-@app_commands.describe(message="النص الذي تريد من البوت قوله")
-async def say(interaction: discord.Interaction, message: str):
-    # التحقق من الصلاحيات (إدارة الرسائل)
+# --- أمر Say المطور ---
+@bot.tree.command(name="say", description="يرسل رسالة عريضة مع منشن اختياري")
+@app_commands.describe(message="النص المراد إرساله", mention="نوع المنشن")
+@app_commands.choices(mention=[
+    app_commands.Choice(name="Everyone", value="everyone"),
+    app_commands.Choice(name="Here", value="here"),
+    app_commands.Choice(name="None", value="none")
+])
+async def say(interaction: discord.Interaction, message: str, mention: app_commands.Choice[str] = None):
     if interaction.user.guild_permissions.manage_messages or interaction.user.id == interaction.guild.owner_id:
-        await interaction.response.send_message("جاري إرسال الرسالة...", ephemeral=True)
-        await interaction.channel.send(message)
+        await interaction.response.send_message("جاري الإرسال...", ephemeral=True)
+        formatted_message = f"**{message}**"
+        content = ""
+        if mention and mention.value == "everyone":
+            content = "@everyone"
+        elif mention and mention.value == "here":
+            content = "@here"
+        await interaction.channel.send(content=f"{content}\n{formatted_message}")
     else:
-        await interaction.response.send_message("❌ ليس لديك صلاحية استخدام هذا الأمر!", ephemeral=True)
+        await interaction.response.send_message("❌ صلاحياتك لا تسمح!", ephemeral=True)
 
 @bot.tree.command(name="panel", description="مركز قيادة رادرز")
 async def panel(interaction: discord.Interaction):
