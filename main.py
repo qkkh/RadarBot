@@ -24,7 +24,6 @@ def keep_alive():
 
 # --- الإعدادات ---
 class RadarConfig:
-    # تم تعديل التوكن هنا ليقرأ من إعدادات السيرفر المخفية (Environment Variables)
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
     FOOTER = "نظام RADARZ الذكي v9.2 | مركز القيادة"
@@ -116,6 +115,17 @@ class RadarBotV9(commands.Bot):
 
 bot = RadarBotV9()
 
+# --- أمر Say الجديد ---
+@bot.tree.command(name="say", description="يجعل البوت يكرر كلامك في القناة")
+@app_commands.describe(message="النص الذي تريد من البوت قوله")
+async def say(interaction: discord.Interaction, message: str):
+    # التحقق من الصلاحيات (إدارة الرسائل)
+    if interaction.user.guild_permissions.manage_messages or interaction.user.id == interaction.guild.owner_id:
+        await interaction.response.send_message("جاري إرسال الرسالة...", ephemeral=True)
+        await interaction.channel.send(message)
+    else:
+        await interaction.response.send_message("❌ ليس لديك صلاحية استخدام هذا الأمر!", ephemeral=True)
+
 @bot.tree.command(name="panel", description="مركز قيادة رادرز")
 async def panel(interaction: discord.Interaction):
     if not interaction.guild: return
@@ -130,8 +140,7 @@ if __name__ == '__main__':
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-    # التحقق من وجود التوكن قبل التشغيل
     if RadarConfig.TOKEN:
         bot.run(RadarConfig.TOKEN)
     else:
-        print("❌ خطأ: التوكن غير موجود! تأكد من إضافته في Environment Variables باسم DISCORD_TOKEN")
+        print("❌ خطأ: التوكن غير موجود!")
