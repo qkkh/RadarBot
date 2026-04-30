@@ -14,7 +14,7 @@ def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
     t = Thread(target=run); t.daemon = True; t.start()
 
-# --- الإعدادات العامة ---
+# --- الإعدادات ---
 class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
@@ -22,46 +22,28 @@ class RadarConfig:
     YOUTUBE_CHANNEL_ID = 924316521050820609
     STATS_CATEGORY_ID = 1494627032112304179 
     LOGS_ROOM_ID = 1498422633669197904 
-    # رولات الإحصائيات
+    # الرولات المسموح لها بالإدارة والطرد
+    ALLOWED_ROLES = [1377997626938753114, 1494645555865976872, 1498095128122884236]
     ROLE_VIP_ID = 1494645555865976872
     ROLE_STAFF_ID = 1498095128122884236
 
-# --- وظيفة صنع صورة بروفايل المطور ---
-async def create_developer_card(user):
-    width, height = 600, 250
-    img = Image.new('RGB', (width, height), color=(10, 10, 10))
-    draw = ImageDraw.Draw(img)
-    pfp_data = await user.display_avatar.read()
-    pfp = Image.open(io.BytesIO(pfp_data)).convert("RGBA").resize((130, 130))
-    mask = Image.new('L', (130, 130), 0)
-    draw_mask = ImageDraw.Draw(mask)
-    draw_mask.ellipse((0, 0, 130, 130), fill=255)
-    pfp.putalpha(mask)
-    img.paste(pfp, (40, 40), pfp)
-    try: font = ImageFont.truetype("arial.ttf", 35)
-    except: font = ImageFont.load_default()
-    draw.text((200, 60), f"Name: {user.name}", fill="white", font=font)
-    draw.text((200, 110), "Status: RADARZ OWNER", fill="red", font=font)
-    draw.rectangle([200, 160, 550, 165], fill="red")
-    output = io.BytesIO()
-    img.save(output, format='PNG')
-    output.seek(0)
-    return discord.File(fp=output, filename="radar_dev.png")
+# فحص إذا كان العضو يملك الرتبة المطلوبة
+def has_radar_permission(member):
+    if member.guild_permissions.administrator: return True
+    return any(role.id in RadarConfig.ALLOWED_ROLES for role in member.roles)
 
-# --- وظيفة تحديث الإحصائيات ---
+# --- وظيفة الإحصائيات ---
 async def refresh_radar_stats(guild):
-    category = guild.get_channel(RadarConfig.STATS_CATEGORY_ID)
-    if not category: return False
-    vip_r = guild.get_role(RadarConfig.ROLE_VIP_ID)
-    staff_r = guild.get_role(RadarConfig.ROLE_STAFF_ID)
-    vips = len([m for m in guild.members if vip_r in m.roles]) if vip_r else 0
-    staffs = len([m for m in guild.members if staff_r in m.roles]) if staff_r else 0
-    for vc in category.voice_channels:
+    cat = guild.get_channel(RadarConfig.STATS_CATEGORY_ID)
+    if not cat: return False
+    vips = len([m for m in guild.members if guild.get_role(RadarConfig.ROLE_VIP_ID) in m.roles])
+    staff = len([m for m in guild.members if guild.get_role(RadarConfig.ROLE_STAFF_ID) in m.roles])
+    for vc in cat.voice_channels:
         try: await vc.delete()
         except: pass
-    stats = [f"👥 الكل: {guild.member_count}", f"👑 الرادار: {vips}", f"🛠️ الإدارة: {staffs}"]
+    stats = [f"👥 الكل: {guild.member_count}", f"👑 الرادار: {vips}", f"🛠️ الإدارة: {staff}"]
     for s in stats:
-        await guild.create_voice_channel(s, category=category, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
+        await guild.create_voice_channel(s, category=cat, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
     return True
 
 # --- أزرار البث المباشر ---
@@ -85,23 +67,27 @@ class StreamButtons(discord.ui.View):
         await i.message.edit(embed=self.update_embed(i.message.embeds[0]))
         await i.response.send_message("تم تسجيل غيابك", ephemeral=True)
 
-# --- المودالز ---
+# --- نوافذ الإدخال (Modals) ---
 class KickModal(discord.ui.Modal, title='طرد عضو 👞'):
-    u = discord.ui.TextInput(label="ID العضو"); r = discord.ui.TextInput(label="السبب", required=False)
+    u = discord.ui.TextInput(label="ID العضو")
+    r = discord.ui.TextInput(label="السبب", required=False)
     async def on_submit(self, i):
+        await i.response.defer(ephemeral=True)
+        if not has_radar_permission(i.user):
+            return await i.followup.send("❌ ليس لديك صلاحية استخدام هذا الأمر")
         try:
-            m = i.guild.get_member(int(self.u.value))
-            if not m: return await i.response.send_message("❌ العضو غير موجود", ephemeral=True)
+            m = await i.guild.fetch_member(int(self.u.value))
+            if i.guild.me.top_role <= m.top_role:
+                return await i.followup.send(f"❌ فشل: رتبة البوت أقل من رتبة {m.display_name}")
             await m.kick(reason=self.r.value)
-            await i.response.send_message(f"✅ تم طرد {m.display_name} بنجاح", ephemeral=True)
-        except discord.Forbidden: await i.response.send_message("❌ فشل: رتبة البوت أقل من العضو أو لا يملك صلاحية", ephemeral=True)
-        except Exception as e: await i.response.send_message(f"❌ حدث خطأ: {str(e)}", ephemeral=True)
+            await i.followup.send(f"✅ تم طرد {m.display_name} بنجاح")
+        except: await i.followup.send("❌ حدث خطأ: تأكد من الأيدي أو ترتيب الرتب")
 
 class TimeoutModal(discord.ui.Modal, title='تايم أوت ⏳'):
     u = discord.ui.TextInput(label="ID العضو"); d = discord.ui.TextInput(label="المدة بالدقائق", default="10")
     async def on_submit(self, i):
         try:
-            m = i.guild.get_member(int(self.u.value))
+            m = await i.guild.fetch_member(int(self.u.value))
             await m.timeout(timedelta(minutes=int(self.d.value)))
             await i.response.send_message(f"✅ تم سجن {m.display_name}", ephemeral=True)
         except: await i.response.send_message("❌ فشل الإجراء", ephemeral=True)
@@ -135,10 +121,6 @@ class SayModal(discord.ui.Modal, title='رسالة 📝'):
 # --- لوحة التحكم ---
 class AdminDashboard(discord.ui.View):
     def __init__(self, bot): super().__init__(timeout=None); self.bot = bot
-    @discord.ui.button(label="بروفايل المطور 🖼️", style=discord.ButtonStyle.primary, row=0)
-    async def d(self, i, b):
-        await i.response.defer(ephemeral=True)
-        f = await create_developer_card(i.user); await i.followup.send(file=f, ephemeral=True)
     @discord.ui.button(label="طرد 👞", style=discord.ButtonStyle.danger, row=0)
     async def k(self, i, b): await i.response.send_modal(KickModal())
     @discord.ui.button(label="تايم أوت ⏳", style=discord.ButtonStyle.secondary, row=0)
@@ -154,7 +136,6 @@ class AdminDashboard(discord.ui.View):
         await i.response.defer(ephemeral=True)
         if await refresh_radar_stats(i.guild): await i.followup.send("✅ تم التحديث", ephemeral=True)
 
-# --- البوت الرئيسي ---
 class RadarBot(commands.Bot):
     def __init__(self): super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def setup_hook(self): self.auto_refresh_stats.start()
@@ -173,10 +154,9 @@ class RadarBot(commands.Bot):
 bot = RadarBot()
 @bot.tree.command(name="panel", description="لوحة التحكم")
 async def panel(i):
-    # يسمح للأدمن فقط باستخدام اللوحة
-    if i.user.guild_permissions.administrator:
+    if has_radar_permission(i.user):
         await i.response.send_message(embed=discord.Embed(title="🎮 RADARZ Panel", color=RadarConfig.MAIN_COLOR), view=AdminDashboard(bot), ephemeral=True)
     else:
-        await i.response.send_message("❌ عذراً أنت لا تملك صلاحية Administrator لاستخدام اللوحة", ephemeral=True)
+        await i.response.send_message("❌ عذراً لا تملك الرتب المطلوبة لاستخدام اللوحة", ephemeral=True)
 
 if __name__ == '__main__': keep_alive(); bot.run(RadarConfig.TOKEN)
