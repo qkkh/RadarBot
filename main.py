@@ -4,7 +4,7 @@ from discord import app_commands
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageOps # مكتبة معالجة الصور
+from PIL import Image, ImageDraw, ImageOps
 
 # --- نظام الاستضافة ---
 app = Flask('')
@@ -23,7 +23,7 @@ class RadarConfig:
     STATS_CATEGORY_ID = 1494627032112304179 
     WELCOME_CHANNEL_ID = 924274202872266785
     DASHBOARD_IMG_PATH = "dashboard.png"
-    WELCOME_IMG_PATH = "welcome.png" # هذه الصورة اللي فيها الدائرة
+    WELCOME_IMG_PATH = "welcome.png"
     ALLOWED_ROLES = [1377997626938753114, 1494645555865976872, 1498095128122884236]
 
 def has_radar_permission(member):
@@ -44,30 +44,19 @@ async def refresh_radar_stats(guild):
                 if vcs[i].name != stat_text: await vcs[i].edit(name=stat_text)
             except: pass
 
-# --- وظيفة دمج الافتار في الدائرة ---
+# --- وظيفة معالجة صورة الترحيب ---
 async def create_welcome_image(member):
-    # فتح صورة الترحيب الأساسية
     background = Image.open(RadarConfig.WELCOME_IMG_PATH).convert("RGBA")
-    
-    # جلب افتار العضو وتحويله لدائرة
     asset = member.display_avatar.with_format("png")
     data = io.BytesIO(await asset.read())
     pfp = Image.open(data).convert("RGBA")
-    
-    # تكبير الافتار ليتناسب مع حجم الدائرة (مثلاً 240x240)
     pfp = pfp.resize((240, 240)) 
-    
-    # قص الافتار بشكل دائري
     mask = Image.new("L", pfp.size, 0)
     draw = ImageDraw.Draw(mask)
     draw.ellipse((0, 0) + pfp.size, fill=255)
     pfp = ImageOps.fit(pfp, mask.size, centering=(0.5, 0.5))
     pfp.putalpha(mask)
-    
-    # وضع الافتار فوق الخلفية (الاحداثيات هنا تقريبية لمكان الدائرة في صورتك)
-    # تحتاج تعديل الـ (325, 135) بناءً على موقع الدائرة بالضبط في welcome.png
-    background.paste(pfp, (325, 135), pfp) 
-    
+    background.paste(pfp, (325, 135), pfp) # الاحداثيات عدلها حسب صورتك
     final_buffer = io.BytesIO()
     background.save(final_buffer, format="PNG")
     final_buffer.seek(0)
@@ -109,13 +98,10 @@ class YoutubeModal(discord.ui.Modal, title='فيديو جديد 🎬'):
 # --- الداشبورد ---
 class AdminDashboard(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    
     @discord.ui.button(label="إطلاق بث 🚀", style=discord.ButtonStyle.danger, custom_id="btn_stream")
     async def st(self, i, b): await i.response.send_modal(StreamModal())
-
     @discord.ui.button(label="يوتيوب 🎬", style=discord.ButtonStyle.primary, custom_id="btn_yt")
     async def yt(self, i, b): await i.response.send_modal(YoutubeModal())
-
     @discord.ui.button(label="تحديث الإحصائيات 🔄", style=discord.ButtonStyle.secondary, custom_id="btn_refresh")
     async def r(self, i, b):
         await i.response.defer(ephemeral=True)
@@ -123,8 +109,7 @@ class AdminDashboard(discord.ui.View):
         if os.path.exists(RadarConfig.DASHBOARD_IMG_PATH):
             file = discord.File(RadarConfig.DASHBOARD_IMG_PATH, filename="dashboard.png")
             await i.followup.send(content="**تم التحديث بنجاح**", file=file, ephemeral=True)
-        else:
-            await i.followup.send("تم التحديث بنجاح" , ephemeral=True)
+        else: await i.followup.send("تم التحديث بنجاح" , ephemeral=True)
 
 class RadarBot(commands.Bot):
     def __init__(self): 
@@ -132,31 +117,90 @@ class RadarBot(commands.Bot):
     async def setup_hook(self): self.add_view(AdminDashboard())
     async def on_ready(self): 
         await self.tree.sync(); print(f"📡 {self.user} Online")
-
-    # نظام الترحيب بالصورة المدمجة
     async def on_member_join(self, member):
         channel = self.get_channel(RadarConfig.WELCOME_CHANNEL_ID)
         if channel:
-            welcome_text = (
-                f"_'Have fun in **__Radraz__**_\n"
-                f"_'User: {member.mention}_<a:Via1:1378238620418183188>"
-            )
+            welcome_text = f"_'Have fun in **__Radraz__**_\n_'User: {member.mention}_<a:Via1:1378238620418183188>"
             try:
-                # إنشاء الصورة المدمجة (الافتار داخل الدائرة)
                 img_data = await create_welcome_image(member)
                 file = discord.File(img_data, filename="welcome_final.png")
-                
                 emb = discord.Embed(description=welcome_text, color=RadarConfig.MAIN_COLOR)
                 emb.set_image(url="attachment://welcome_final.png")
                 await channel.send(file=file, embed=emb)
-            except Exception as e:
-                print(f"Error creating image: {e}")
-                await channel.send(content=welcome_text)
+            except: await channel.send(content=welcome_text)
 
 bot = RadarBot()
 
-# --- الـ 20 أمر إداري (نفس الأوامر السابقة بدون تغيير) ---
-@bot.tree.command(name="setpanel", description="تثبيت لوحة التحكم")
+# --- قائمة الـ 20 أمر إداري كاملة ---
+
+@bot.tree.command(name="say", description="1- إرسال رسالة عريضة")
+async def say(i: discord.Interaction):
+    if not has_radar_permission(i.user): return await i.response.send_message("لا تملك صلاحية" , ephemeral=True)
+    await i.response.send_modal(SayModal())
+
+@bot.tree.command(name="clear", description="2- مسح الرسائل")
+async def clear(i: discord.Interaction, amount: int):
+    if not i.user.guild_permissions.manage_messages: return await i.response.send_message("صلاحية ناقصة" , ephemeral=True)
+    await i.response.defer(ephemeral=True)
+    await i.channel.purge(limit=amount)
+    await i.followup.send(f"تم مسح {amount} رسالة" , ephemeral=True)
+
+@bot.tree.command(name="kick", description="3- طرد عضو")
+async def kick(i: discord.Interaction, member: discord.Member):
+    if not i.user.guild_permissions.kick_members: return await i.response.send_message("صلاحية ناقصة" , ephemeral=True)
+    await member.kick(); await i.response.send_message(f"تم طرد {member.name}")
+
+@bot.tree.command(name="ban", description="4- حظر عضو")
+async def ban(i: discord.Interaction, member: discord.Member):
+    if not i.user.guild_permissions.ban_members: return await i.response.send_message("صلاحية ناقصة" , ephemeral=True)
+    await member.ban(); await i.response.send_message(f"تم حظر {member.name}")
+
+@bot.tree.command(name="mute", description="5- كتم عضو")
+async def mute(i: discord.Interaction, member: discord.Member, minutes: int):
+    if not i.user.guild_permissions.moderate_members: return await i.response.send_message("صلاحية ناقصة" , ephemeral=True)
+    await member.timeout(timedelta(minutes=minutes)); await i.response.send_message(f"تم كتم {member.name}")
+
+@bot.tree.command(name="unmute", description="6- فك كتم عضو")
+async def unmute(i: discord.Interaction, member: discord.Member):
+    await member.timeout(None); await i.response.send_message(f"تم فك كتم {member.name}")
+
+@bot.tree.command(name="lock", description="7- قفل الروم")
+async def lock(i: discord.Interaction):
+    await i.channel.set_permissions(i.guild.default_role, send_messages=False); await i.response.send_message("الروم مقفل")
+
+@bot.tree.command(name="unlock", description="8- فتح الروم")
+async def unlock(i: discord.Interaction):
+    await i.channel.set_permissions(i.guild.default_role, send_messages=True); await i.response.send_message("الروم مفتوح")
+
+@bot.tree.command(name="hide", description="9- إخفاء الروم")
+async def hide(i: discord.Interaction):
+    await i.channel.set_permissions(i.guild.default_role, view_channel=False); await i.response.send_message("الروم مخفي")
+
+@bot.tree.command(name="show", description="10- إظهار الروم")
+async def show(i: discord.Interaction):
+    await i.channel.set_permissions(i.guild.default_role, view_channel=True); await i.response.send_message("الروم ظاهر")
+
+@bot.tree.command(name="slowmode", description="11- وضع البطئ")
+async def slowmode(i: discord.Interaction, seconds: int):
+    await i.channel.edit(slowmode_delay=seconds); await i.response.send_message(f"الوضع البطيء: {seconds}ث")
+
+@bot.tree.command(name="setnick", description="12- تغيير لقب")
+async def setnick(i: discord.Interaction, member: discord.Member, nick: str):
+    await member.edit(nick=nick); await i.response.send_message("تم تغيير اللقب")
+
+@bot.tree.command(name="warn", description="13- تحذير عضو")
+async def warn(i: discord.Interaction, member: discord.Member, reason: str):
+    await i.response.send_message(f"تم تحذير {member.mention} | السبب: {reason}")
+
+@bot.tree.command(name="role_add", description="14- إضافة رتبة")
+async def role_add(i: discord.Interaction, member: discord.Member, role: discord.Role):
+    await member.add_roles(role); await i.response.send_message("تمت إضافة الرتبة")
+
+@bot.tree.command(name="role_remove", description="15- إزالة رتبة")
+async def role_remove(i: discord.Interaction, member: discord.Member, role: discord.Role):
+    await member.remove_roles(role); await i.response.send_message("تمت إزالة الرتبة")
+
+@bot.tree.command(name="setpanel", description="16- تثبيت الداشبورد")
 async def setpanel(i: discord.Interaction):
     if not has_radar_permission(i.user): return await i.response.send_message("لا تملك صلاحية" , ephemeral=True)
     emb = discord.Embed(title="🎮 RADARZ Dashboard", color=RadarConfig.MAIN_COLOR)
@@ -167,7 +211,20 @@ async def setpanel(i: discord.Interaction):
     else: await i.channel.send(embed=emb, view=AdminDashboard())
     await i.response.send_message("تم تثبيت البانل" , ephemeral=True)
 
-# ... باقي الأوامر (say, clear, kick, ban, etc.) ...
-# [ملاحظة: أبقيت جميع الأوامر الإدارية في الذاكرة لتعمل كما هي]
+@bot.tree.command(name="user_info", description="17- معلومات عضو")
+async def user_info(i: discord.Interaction, member: discord.Member):
+    await i.response.send_message(f"اسم العضو: {member.name}\nتاريخ الدخول: {member.joined_at.strftime('%Y-%m-%d')}")
+
+@bot.tree.command(name="server_info", description="18- معلومات السيرفر")
+async def server_info(i: discord.Interaction):
+    await i.response.send_message(f"اسم السيرفر: {i.guild.name}\nعدد الأعضاء: {i.guild.member_count}")
+
+@bot.tree.command(name="avatar", description="19- صورة عضو")
+async def avatar(i: discord.Interaction, member: discord.Member):
+    await i.response.send_message(member.display_avatar.url)
+
+@bot.tree.command(name="ping", description="20- سرعة البوت")
+async def ping(i: discord.Interaction):
+    await i.response.send_message(f"بينق البوت: {round(bot.latency * 1000)}ms")
 
 if __name__ == '__main__': keep_alive(); bot.run(RadarConfig.TOKEN)
