@@ -40,7 +40,38 @@ async def refresh_radar_stats(guild):
         if i < len(vcs):
             if vcs[i].name != stat_text: await vcs[i].edit(name=stat_text)
 
-# --- المودالز ---
+# --- المودالز (الشاشات المنبثقة) ---
+
+class SayModal(discord.ui.Modal, title='إرسال رسالة رادار 💬'):
+    msg = discord.ui.TextInput(
+        label="محتوى الرسالة",
+        style=discord.TextStyle.paragraph,
+        placeholder="اكتب كلامك هنا وسيظهر بشكل عريض تلقائياً",
+        required=True
+    )
+    ment = discord.ui.TextInput(
+        label="المنشن",
+        placeholder="none / here / everyone",
+        default="none",
+        required=True
+    )
+
+    async def on_submit(self, i: discord.Interaction):
+        # تنسيق النص ليكون Bold
+        formatted_msg = f"**{self.msg.value}**"
+        
+        # التعامل مع خيارات المنشن
+        mention_str = ""
+        m_choice = self.ment.value.lower().strip()
+        if m_choice == "everyone":
+            mention_str = "@everyone\n"
+        elif m_choice == "here":
+            mention_str = "@here\n"
+        
+        final_content = f"{mention_str}{formatted_msg}"
+        await i.channel.send(content=final_content)
+        await i.response.send_message("تم إرسال الرسالة بنجاح", ephemeral=True)
+
 class StreamModal(discord.ui.Modal, title='إشارة بث 📡'):
     t = discord.ui.TextInput(label="العنوان")
     ti = discord.ui.TextInput(label="بعد كم دقيقة؟")
@@ -51,7 +82,7 @@ class StreamModal(discord.ui.Modal, title='إشارة بث 📡'):
         emb = discord.Embed(title=f"🚨 إشارة بث {self.t.value}", color=discord.Color.red())
         emb.add_field(name="⏳ الانطلاق", value=f"<t:{ts}:R>")
         await ch.send(content="@everyone رادار البث رصد إشارة جديدة", embed=emb)
-        await i.response.send_message("تم الإرسال بنجاح" , ephemeral=True)
+        await i.response.send_message("تم الإرسال بنجاح", ephemeral=True)
 
 class YoutubeModal(discord.ui.Modal, title='فيديو جديد 🎬'):
     l = discord.ui.TextInput(label="الرابط")
@@ -59,7 +90,7 @@ class YoutubeModal(discord.ui.Modal, title='فيديو جديد 🎬'):
     async def on_submit(self, i):
         ch = i.guild.get_channel(RadarConfig.YOUTUBE_CHANNEL_ID)
         if ch: await ch.send(content=f"📣 @{self.m.value} فيديو جديد\n{self.l.value}")
-        await i.response.send_message("تم نشر الفيديو" , ephemeral=True)
+        await i.response.send_message("تم نشر الفيديو", ephemeral=True)
 
 # --- الداشبورد ---
 class AdminDashboard(discord.ui.View):
@@ -77,35 +108,31 @@ class AdminDashboard(discord.ui.View):
 class RadarBot(commands.Bot):
     def __init__(self): super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def setup_hook(self): 
-        self.auto_refresh_stats.start()
         self.add_view(AdminDashboard())
     async def on_ready(self): 
         await self.tree.sync(); print(f"📡 {self.user} Online")
-    @tasks.loop(minutes=10)
-    async def auto_refresh_stats(self):
-        for g in self.guilds: await refresh_radar_stats(g)
 
 bot = RadarBot()
 
-# --- أوامر السلاش الإدارية ---
+# --- أوامر السلاش ---
+
+@bot.tree.command(name="say", description="إرسال رسالة عبر شاشة منبثقة")
+async def say(i: discord.Interaction):
+    if not has_radar_permission(i.user): 
+        return await i.response.send_message("لا تملك صلاحية", ephemeral=True)
+    await i.response.send_modal(SayModal())
 
 @bot.tree.command(name="setpanel", description="تثبيت لوحة التحكم")
 async def setpanel(i: discord.Interaction):
-    if not has_radar_permission(i.user): return await i.response.send_message("لا تملك صلاحية" , ephemeral=True)
+    if not has_radar_permission(i.user): return await i.response.send_message("لا تملك صلاحية", ephemeral=True)
     await i.response.defer(ephemeral=True)
     emb = discord.Embed(title="🎮 RADARZ Dashboard", description="لوحة التحكم الدائمة للمسؤولين", color=RadarConfig.MAIN_COLOR)
     await i.channel.send(embed=emb, view=AdminDashboard())
     await i.followup.send("تم تثبيت البانل")
 
-@bot.tree.command(name="say", description="إرسال رسالة من البوت")
-async def say(i: discord.Interaction, message: str, mention: str = None):
-    if not has_radar_permission(i.user): return await i.response.send_message("صلاحيات ناقصة" , ephemeral=True)
-    await i.channel.send(content=f"@{mention}\n{message}" if mention else message)
-    await i.response.send_message("تم الإرسال" , ephemeral=True)
-
 @bot.tree.command(name="clear", description="مسح الرسائل")
 async def clear(i: discord.Interaction, amount: int):
-    if not i.user.guild_permissions.manage_messages: return await i.response.send_message("لا تملك صلاحية مسح" , ephemeral=True)
+    if not i.user.guild_permissions.manage_messages: return await i.response.send_message("لا تملك صلاحية مسح", ephemeral=True)
     await i.response.defer(ephemeral=True)
     await i.channel.purge(limit=amount)
     await i.followup.send(f"تم مسح {amount} رسالة")
@@ -119,42 +146,5 @@ async def lock(i: discord.Interaction):
 async def unlock(i: discord.Interaction):
     await i.channel.set_permissions(i.guild.default_role, send_messages=True)
     await i.response.send_message("تم فتح الروم")
-
-@bot.tree.command(name="kick", description="طرد عضو")
-async def kick(i: discord.Interaction, member: discord.Member):
-    if not i.user.guild_permissions.kick_members: return await i.response.send_message("خطأ في الصلاحيات" , ephemeral=True)
-    await member.kick()
-    await i.response.send_message(f"تم طرد {member.name}")
-
-@bot.tree.command(name="ban", description="حظر عضو")
-async def ban(i: discord.Interaction, member: discord.Member):
-    if not i.user.guild_permissions.ban_members: return await i.response.send_message("خطأ في الصلاحيات" , ephemeral=True)
-    await member.ban()
-    await i.response.send_message(f"تم حظر {member.name}")
-
-@bot.tree.command(name="mute", description="كتم مؤقت")
-async def mute(i: discord.Interaction, member: discord.Member, minutes: int):
-    await member.timeout(timedelta(minutes=minutes))
-    await i.response.send_message(f"تم كتم {member.name} لمدة {minutes} دقيقة")
-
-@bot.tree.command(name="unmute", description="فك الكتم")
-async def unmute(i: discord.Interaction, member: discord.Member):
-    await member.timeout(None)
-    await i.response.send_message(f"تم فك كتم {member.name}")
-
-@bot.tree.command(name="hide", description="إخفاء الروم")
-async def hide(i: discord.Interaction):
-    await i.channel.set_permissions(i.guild.default_role, view_channel=False)
-    await i.response.send_message("تم إخفاء الروم")
-
-@bot.tree.command(name="show", description="إظهار الروم")
-async def show(i: discord.Interaction):
-    await i.channel.set_permissions(i.guild.default_role, view_channel=True)
-    await i.response.send_message("تم إظهار الروم")
-
-@bot.tree.command(name="slowmode", description="وضع البطيء")
-async def slowmode(i: discord.Interaction, seconds: int):
-    await i.channel.edit(slowmode_delay=seconds)
-    await i.response.send_message(f"تم تفعيل الوضع البطيء {seconds} ثانية")
 
 if __name__ == '__main__': keep_alive(); bot.run(RadarConfig.TOKEN)
