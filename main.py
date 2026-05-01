@@ -41,9 +41,9 @@ async def refresh_radar_stats(guild):
     bots = len([m for m in guild.members if m.bot])
     
     stats_data = [
-        f"👥 الكل: {guild.member_count}",
-        f"🟢 اونلاين: {online}",
-        f"🤖 بوتات: {bots}"
+        f"👥 Members: {guild.member_count}",
+        f"🟢 online: {online}",
+        f"🤖 bots: {bots}"
     ]
     
     vcs = sorted(cat.voice_channels, key=lambda x: x.position)
