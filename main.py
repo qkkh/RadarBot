@@ -4,7 +4,7 @@ from discord import app_commands
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageOps
 
 # --- نظام الاستضافة ---
 app = Flask('')
@@ -25,36 +25,26 @@ class RadarConfig:
     WELCOME_CHANNEL_ID = 924274202872266785
     DASHBOARD_ROOM_ID = 1494618976498483261
     ALLOWED_ROLES = [1377997626938753114, 1494645555865976872, 1498095128122884236]
-    ROLE_VIP_ID = 1494645555865976872
-    ROLE_STAFF_ID = 1498095128122884236
 
 def has_radar_permission(member):
     if member.guild_permissions.administrator: return True
     return any(role.id in RadarConfig.ALLOWED_ROLES for role in member.roles)
 
-# --- نظام الإحصائيات المطور (تحديث الاسم فقط) ---
+# --- نظام الإحصائيات المطور (تعديل الاسم فقط) ---
 async def refresh_radar_stats(guild):
     cat = guild.get_channel(RadarConfig.STATS_CATEGORY_ID)
     if not cat: return
-    
     online = len([m for m in guild.members if m.status != discord.Status.offline and not m.bot])
     bots = len([m for m in guild.members if m.bot])
-    
-    stats_data = [
-        f"👥 Members: {guild.member_count}",
-        f"🟢 Online: {online}",
-        f"🤖 Bots: {bots}"
-    ]
-    
+    stats_data = [f"👥 Members: {guild.member_count}", f"🟢 Online: {online}", f"🤖 Bots: {bots}"]
     vcs = sorted(cat.voice_channels, key=lambda x: x.position)
     for i, stat_text in enumerate(stats_data):
         if i < len(vcs):
-            if vcs[i].name != stat_text:
-                await vcs[i].edit(name=stat_text)
+            if vcs[i].name != stat_text: await vcs[i].edit(name=stat_text)
         else:
             await guild.create_voice_channel(stat_text, category=cat, overwrites={guild.default_role: discord.PermissionOverwrite(connect=False)})
 
-# --- نظام الترحيب بالصورة المرفوعة ---
+# --- نظام الترحيب ---
 async def create_welcome_card(member):
     try:
         background = Image.open("welcome.png").convert("RGBA")
@@ -71,27 +61,7 @@ async def create_welcome_card(member):
         return discord.File(buf, filename='welcome_radarz.png')
     except: return None
 
-# --- الأزرار والمودالز الأصلية (بدون تعديل) ---
-class StreamButtons(discord.ui.View):
-    def __init__(self, link):
-        super().__init__(timeout=None)
-        self.link = link
-        self.going, self.not_going = set(), set()
-        self.add_item(discord.ui.Button(label="دخول البث المباشر 🚌", url=self.link))
-    def update_embed(self, embed):
-        embed.set_field_at(2, name="📡 المكتشفين على الرادار", value=f"✅ {len(self.going)} حاضر | ❌ {len(self.not_going)} غائب", inline=False)
-        return embed
-    @discord.ui.button(label="سأحضر ✅", style=discord.ButtonStyle.success, custom_id="go_btn")
-    async def go(self, i, b):
-        self.going.add(i.user.id); self.not_going.discard(i.user.id)
-        await i.message.edit(embed=self.update_embed(i.message.embeds[0]))
-        await i.response.send_message("تم تسجيل حضورك!", ephemeral=True)
-    @discord.ui.button(label="لن أحضر ❌", style=discord.ButtonStyle.danger, custom_id="no_btn")
-    async def no(self, i, b):
-        self.not_going.add(i.user.id); self.going.discard(i.user.id)
-        await i.message.edit(embed=self.update_embed(i.message.embeds[0]))
-        await i.response.send_message("تم تسجيل غيابك", ephemeral=True)
-
+# --- المودالز الأصلية ---
 class KickModal(discord.ui.Modal, title='طرد عضو 👞'):
     u = discord.ui.TextInput(label="ID العضو")
     r = discord.ui.TextInput(label="السبب", required=False)
@@ -111,6 +81,26 @@ class TimeoutModal(discord.ui.Modal, title='تايم أوت ⏳'):
             await m.timeout(timedelta(minutes=int(self.d.value)))
             await i.response.send_message(f"✅ تم سجن {m.display_name}", ephemeral=True)
         except: await i.response.send_message("❌ فشل الإجراء", ephemeral=True)
+
+class StreamButtons(discord.ui.View):
+    def __init__(self, link):
+        super().__init__(timeout=None)
+        self.link = link
+        self.going, self.not_going = set(), set()
+        self.add_item(discord.ui.Button(label="دخول البث المباشر 🚌", url=self.link))
+    def update_embed(self, embed):
+        embed.set_field_at(2, name="📡 المكتشفين على الرادار", value=f"✅ {len(self.going)} حاضر | ❌ {len(self.not_going)} غائب", inline=False)
+        return embed
+    @discord.ui.button(label="سأحضر ✅", style=discord.ButtonStyle.success, custom_id="go_btn")
+    async def go(self, i, b):
+        self.going.add(i.user.id); self.not_going.discard(i.user.id)
+        await i.message.edit(embed=self.update_embed(i.message.embeds[0]))
+        await i.response.send_message("تم تسجيل حضورك!", ephemeral=True)
+    @discord.ui.button(label="لن أحضر ❌", style=discord.ButtonStyle.danger, custom_id="no_btn")
+    async def no(self, i, b):
+        self.not_going.add(i.user.id); self.going.discard(i.user.id)
+        await i.message.edit(embed=self.update_embed(i.message.embeds[0]))
+        await i.response.send_message("تم تسجيل غيابك", ephemeral=True)
 
 class StreamModal(discord.ui.Modal, title='إشارة بث 📡'):
     t = discord.ui.TextInput(label="العنوان"); ti = discord.ui.TextInput(label="بعد كم دقيقة؟"); l = discord.ui.TextInput(label="الرابط")
@@ -163,19 +153,16 @@ class RadarBot(commands.Bot):
     async def on_ready(self): 
         await self.tree.sync()
         print(f"📡 {self.user} Online")
-
     @tasks.loop(minutes=10)
     async def auto_refresh_stats(self):
         for g in self.guilds: await refresh_radar_stats(g)
-
     async def on_member_join(self, member):
-        ch = member.guild.get_channel(RadarConfig.WELCOME_CHANNEL_ID)
+        ch = self.get_channel(RadarConfig.WELCOME_CHANNEL_ID)
         if ch:
             file = await create_welcome_card(member)
             msg = (f"_'Have fun in **__Radarz __**_\n"
                    f"_'User: {member.mention}_<a:Via1:1378238620418183188>")
             await ch.send(content=msg, file=file) if file else await ch.send(content=msg)
-
     async def on_message_delete(self, m):
         if m.author.bot: return
         log = self.get_channel(RadarConfig.LOGS_ROOM_ID)
@@ -190,14 +177,16 @@ bot = RadarBot()
 async def panel(i):
     if has_radar_permission(i.user):
         await i.response.send_message(embed=discord.Embed(title="🎮 RADARZ Panel", color=RadarConfig.MAIN_COLOR), view=AdminDashboard(bot), ephemeral=True)
-    else:
-        await i.response.send_message("❌ لا تملك صلاحية", ephemeral=True)
+    else: await i.response.send_message("❌ لا تملك صلاحية", ephemeral=True)
 
 @bot.command()
 async def setup_dashboard(ctx):
     if not ctx.author.guild_permissions.administrator: return
     emb = discord.Embed(title="🎮 مركز تحكم الرادار", description="لوحة التحكم بجميع أوامر السيرفر متاحة الآن للإدارة", color=RadarConfig.MAIN_COLOR)
-    # ملاحظة: تأكد من رفع صورة للداشبورد وتسميتها dashboard.png أو استبدال الرابط
-    await ctx.send(embed=emb, view=AdminDashboard(bot))
+    try:
+        file = discord.File("dashboard.png", filename="dashboard.png")
+        emb.set_image(url="attachment://dashboard.png")
+        await ctx.send(file=file, embed=emb, view=AdminDashboard(bot))
+    except: await ctx.send(embed=emb, view=AdminDashboard(bot))
 
 if __name__ == '__main__': keep_alive(); bot.run(RadarConfig.TOKEN)
