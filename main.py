@@ -6,7 +6,6 @@ from threading import Thread
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageOps
 
-# --- نظام الاستضافة ---
 app = Flask('')
 @app.route('/')
 def home(): return "RADARZ Online"
@@ -14,36 +13,6 @@ def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
     t = Thread(target=run); t.daemon = True; t.start()
 
-# --- الإعدادات ---
-أبشر يا Phoenix عدلت لك الإحداثيات (Coordinates)class RadarConfig:
-    TOKEN = os.getenv('DISCORD_TOKEN')
-    MAIN_COLOR = discord.Color.red()
-    STREAM_CHANNEL_ID بالضبط لتكون الصورة أكبر ومزاحة لليمين لتتوسط الدائرة تماماً وحدثت رس = 1200740059817721856
-    YOUTUBE_CHANNEL_ID = 9243الة الترحيب بنفس التنسيق والمحتوى اللي طلبته16521050820609
-    STATS_CATEGORY_ID = 1494627032112 مع الحفاظ على كل الأوامر الإدارية العشرين وال304179 
-    WELCOME_CHANNEL_ID = 924274202872266785
-    داشبورد وكافة وظائف الكود الأساسي بدون أي تغيير آخرVERIFY_ROLE_ID = 1377890014964482048 
-    VERIFY_MSG_ID
-
-إليك الكود المحدث بالكامل وجاهز للنسخ:
-```python
-import asyncio, os, re, discord, io
-from discord.ext import commands, tasks
-from discord import app_commands
-from flask import Flask
-from threading import Thread
-from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageOps
-
-# --- نظام الاستضافة ---
-app = Flask('')
-@app.route('/')
-def home(): return "RADARZ Online"
-def run(): app.run(host='0.0.0.0', port=8080)
-def keep_alive():
-    t = Thread(target=run); t.daemon = True; t.start()
-
-# --- الإعدادات ---
 class RadarConfig:
     TOKEN = os.getenv('DISCORD_TOKEN')
     MAIN_COLOR = discord.Color.red()
@@ -61,31 +30,23 @@ def has_radar_permission(member):
     if member.guild_permissions.administrator: return True
     return any(role.id in RadarConfig.ALLOWED_ROLES for role in member.roles)
 
-# --- معالجة صورة الترحيب الموزونة (تكبير + إزاحة لليمين لتتوسط الدائرة) ---
 async def create_welcome_image(member):
     background = Image.open(RadarConfig.WELCOME_IMG_PATH).convert("RGBA")
     asset = member.display_avatar.with_format("png")
     data = io.BytesIO(await asset.read())
     pfp = Image.open(data).convert("RGBA")
-    
-    # تكبير الافتار ليكون أوضح ومتناسب مع الدائرة
     pfp_size = (330, 330)
     pfp = pfp.resize(pfp_size) 
-    
     mask = Image.new("L", pfp_size, 0)
     draw = ImageDraw.Draw(mask)
     draw.ellipse((0, 0) + pfp_size, fill=255)
     pfp.putalpha(mask)
-    
-    # الإحداثيات الموزونة: 215 (يمين) | 200 (تحت) لتلائم نص الدائرة تماماً
     background.paste(pfp, (215, 200), pfp) 
-    
     final_buffer = io.BytesIO()
     background.save(final_buffer, format="PNG")
     final_buffer.seek(0)
     return final_buffer
 
-# --- المودالز ---
 class SayModal(discord.ui.Modal, title='إرسال رسالة رادار 💬'):
     msg = discord.ui.TextInput(label="محتوى الرسالة", style=discord.TextStyle.paragraph, required=True)
     ment = discord.ui.TextInput(label="المنشن", placeholder="none / here / everyone", default="none", required=True)
@@ -117,7 +78,6 @@ class YoutubeModal(discord.ui.Modal, title='فيديو جديد 🎬'):
         if ch: await ch.send(content=f"📣 @{self.m.value} فيديو جديد\n{self.l.value}")
         await i.response.send_message("تم نشر الفيديو" , ephemeral=True)
 
-# --- الداشبورد ---
 class AdminDashboard(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="إطلاق بث 🚀", style=discord.ButtonStyle.danger, custom_id="btn_stream")
@@ -135,22 +95,15 @@ class RadarBot(commands.Bot):
     async def setup_hook(self): self.add_view(AdminDashboard())
     async def on_ready(self): 
         await self.tree.sync(); print(f"📡 {self.user} Online")
-
     async def on_member_join(self, member):
         channel = self.get_channel(RadarConfig.WELCOME_CHANNEL_ID)
         if channel:
-            # رسالة الترحيب المحدثة كما طلبت بالضبط
-            welcome_msg = (
-                f"_'Have fun in **__Radarz __**_\n"
-                f"     _'User: {member.mention}_<a:Via1:1378238620418183188>"
-            )
+            welcome_msg = f"_'Have fun in **__Radarz __**_\n     _'User: {member.mention}_<a:Via1:1378238620418183188>"
             try:
                 img_data = await create_welcome_image(member)
                 file = discord.File(img_data, filename="welcome.png")
                 await channel.send(content=welcome_msg, file=file)
-            except:
-                await channel.send(content=welcome_msg)
-
+            except: await channel.send(content=welcome_msg)
     async def on_raw_reaction_add(self, payload):
         if payload.message_id == RadarConfig.VERIFY_MSG_ID:
             guild = self.get_guild(payload.guild_id)
@@ -162,7 +115,6 @@ class RadarBot(commands.Bot):
 
 bot = RadarBot()
 
-# --- قائمة الأوامر الإدارية الـ 20 ---
 @bot.tree.command(name="say", description="إرسال رسالة")
 async def say(i: discord.Interaction):
     if not has_radar_permission(i.user): return await i.response.send_message("صلاحية ناقصة" , ephemeral=True)
@@ -245,7 +197,7 @@ async def avatar(i: discord.Interaction, member: discord.Member):
 async def ping(i: discord.Interaction):
     await i.response.send_message(f"البينق {round(bot.latency * 1000)}ms")
 
-@bot.tree.command(```name="server_info", description="بيانات سيرفر")
+@bot.tree.command(name="server_info", description="بيانات سيرفر")
 async def server_info(i: discord.Interaction):
     await i.response.send_message(f"السيرفر {i.guild.name} الأعضاء {i.guild.member_count}")
 
